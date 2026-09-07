@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ShipTrack</title>
+  <meta name="description" content="One board for every parcel: paste a tracking number, see where it is and when it lands.">
+  <meta name="theme-color" content="#E4D8C3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171512" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ShipTrack">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>ShipTrack</h1>
+      <p id="summary" class="summary" aria-live="polite"></p>
+    </div>
+    <button id="openSettings" class="icon-btn" type="button" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <form id="addForm" class="add" autocomplete="off">
+      <label for="numberInput" class="sr-only">Tracking number or link</label>
+      <input id="numberInput" class="number-input" type="text" placeholder="Paste a tracking number or link" spellcheck="false" autocapitalize="characters" autocorrect="off" enterkeyhint="go">
+      <button type="submit" class="btn btn-primary">Track</button>
+      <p id="addHint" class="hint" role="status" hidden></p>
+    </form>
+
+    <nav class="filters" aria-label="Filter parcels">
+      <button type="button" class="chip is-active" data-filter="active">Active <span class="count" data-count="active">0</span></button>
+      <button type="button" class="chip" data-filter="delivered">Delivered <span class="count" data-count="delivered">0</span></button>
+      <button type="button" class="chip" data-filter="all">All <span class="count" data-count="all">0</span></button>
+      <span class="spacer"></span>
+      <button type="button" id="refreshAll" class="text-btn" title="Refresh every active parcel">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+        Refresh
+      </button>
+    </nav>
+    <p id="lastRefresh" class="last-refresh mono"></p>
+
+    <section id="list" class="list"></section>
+  </main>
+
+  <datalist id="stores"></datalist>
+
+  <dialog id="settings" aria-labelledby="settingsTitle">
+    <form method="dialog" class="settings" id="settingsForm">
+      <header class="dialog-head">
+        <h2 id="settingsTitle">Settings</h2>
+        <button type="button" class="icon-btn" data-action="close" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <fieldset>
+        <legend>Live tracking</legend>
+        <p class="muted">Status and arrival dates come from one of these services. Both have free plans, and the key stays in this browser only.</p>
+        <label class="radio"><input type="radio" name="provider" value="trackingmore"><span><strong>TrackingMore</strong> <em>50 shipments a month free</em></span></label>
+        <label class="radio"><input type="radio" name="provider" value="ship24"><span><strong>Ship24</strong> <em>10 shipments a month free</em></span></label>
+        <label class="radio"><input type="radio" name="provider" value=""><span><strong>None</strong> <em>carrier links only, no live status</em></span></label>
+
+        <div id="keyRow" class="key-block">
+          <label for="apiKey" class="field-label">API key <a id="keyLink" href="#" target="_blank" rel="noopener">Get a key ↗</a></label>
+          <div class="key-row">
+            <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the key here">
+            <button type="button" id="toggleKey" class="text-btn">Show</button>
+            <button type="button" id="testKey" class="btn">Test</button>
+          </div>
+          <p id="keyResult" class="hint" role="status"></p>
+          <p id="keyHint" class="muted small"></p>
+          <div id="planRow" class="plan-row" hidden>
+            <span class="field-label">Ship24 plan</span>
+            <label class="radio"><input type="radio" name="plan" value="per-shipment"><span>Per shipment <em>10 free a month, refresh as often as you like</em></span></label>
+            <label class="radio"><input type="radio" name="plan" value="per-call"><span>Per call <em>100 free calls a month, every refresh counts</em></span></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Look</legend>
+        <label class="field-label" for="theme">Theme</label>
+        <select id="theme">
+          <option value="auto">Match the device</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </fieldset>
+
+      <fieldset>
+        <legend>Your data</legend>
+        <p class="muted">Parcels and notes live in this browser. Export a copy before switching phones. The API key is not included.</p>
+        <div class="data-row">
+          <button type="button" id="exportBtn" class="btn">Export JSON</button>
+          <label class="btn file-btn">Import JSON<input type="file" id="importFile" accept="application/json,.json" hidden></label>
+          <span class="spacer"></span>
+          <button type="button" id="wipeBtn" class="text-btn danger">Delete everything</button>
+        </div>
+      </fieldset>
+
+      <footer class="dialog-foot">
+        <button type="submit" value="save" class="btn btn-primary">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
