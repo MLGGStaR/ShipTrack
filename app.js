@@ -1,7 +1,7 @@
 // app.js — the board: storage, add/refresh flows and rendering. Logic lives in carriers.js, providers.js, format.js.
 
 import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, universalLinks } from './carriers.js';
-import { PROVIDERS, fetchTracking, testKey } from './providers.js';
+import { PROVIDERS, fetchTracking, testKey, parseSetupHash } from './providers.js';
 import { statusLabel, stampText, relativeTime, eventTime, milestoneStep, parseTime } from './format.js';
 
 const STORAGE_KEY = 'shiptrack.v1';
@@ -642,9 +642,21 @@ function registerSW() {
   navigator.serviceWorker.register('sw.js').catch(() => { /* offline copy is optional */ });
 }
 
+// A setup link (#provider=...&key=...) stores the key on this device once, then disappears from the URL.
+function applySetupLink() {
+  const setup = parseSetupHash(location.hash);
+  if (!setup) return false;
+  Object.assign(state.settings, setup);
+  save();
+  history.replaceState(null, '', location.pathname + location.search);
+  toast(`${PROVIDERS[setup.provider].name} key saved on this device`);
+  return true;
+}
+
 load();
+const fromLink = applySetupLink();
 applyTheme();
 wire();
 render();
 registerSW();
-refreshAll();
+refreshAll({ force: fromLink });

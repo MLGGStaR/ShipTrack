@@ -20,6 +20,8 @@ Live site: https://mlggstar.github.io/ShipTrack/
 2. Pick Ship24, follow the "Get a key" link, sign up, choose the **Free** plan under Subscriptions, create a key under Integrations → API keys, and paste it. Tap **Test**, then **Save**.
 3. Paste a tracking number. Done.
 
+To set up another device without retyping the key, open the site with a setup link: `https://mlggstar.github.io/ShipTrack/#provider=ship24&key=YOUR_KEY`. The key is stored on that device and removed from the address bar; the part after `#` is never sent to the server.
+
 The key and all parcel data stay in the browser's local storage. Nothing is sent anywhere except the tracking service you chose. Use **Export JSON** in Settings before switching phones.
 
 ## Running locally

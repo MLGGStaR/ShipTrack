@@ -1,6 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PROVIDERS, normalizeShip24, normalizeTrackingMore, fetchTracking, testKey } from '../providers.js';
+import { PROVIDERS, normalizeShip24, normalizeTrackingMore, fetchTracking, testKey, parseSetupHash } from '../providers.js';
+
+// --- parseSetupHash: one-time setup links like /#provider=ship24&key=apik_... ----
+
+test('parseSetupHash reads provider, key and plan from a setup link', () => {
+  assert.deepEqual(parseSetupHash('#provider=ship24&key=apik_abc123&plan=per-call'), { provider: 'ship24', apiKey: 'apik_abc123', ship24Plan: 'per-call' });
+});
+
+test('parseSetupHash defaults to Ship24 and ignores a bad plan', () => {
+  assert.deepEqual(parseSetupHash('#key=apik_abc123&plan=whatever'), { provider: 'ship24', apiKey: 'apik_abc123' });
+});
+
+test('parseSetupHash rejects unknown providers, missing keys and unrelated hashes', () => {
+  assert.equal(parseSetupHash('#provider=bogus&key=x'), null);
+  assert.equal(parseSetupHash('#provider=ship24'), null);
+  assert.equal(parseSetupHash('#nums=123'), null);
+  assert.equal(parseSetupHash(''), null);
+  assert.equal(parseSetupHash(undefined), null);
+});
 
 // --- fixtures ----------------------------------------------------------------
 

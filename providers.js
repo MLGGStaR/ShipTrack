@@ -23,6 +23,21 @@ export const PROVIDERS = {
   },
 };
 
+// One-time setup links: /#provider=ship24&key=apik_...&plan=per-shipment
+// The hash never leaves the browser, so the key is not sent to the server or stored in the repo.
+export function parseSetupHash(hash) {
+  if (typeof hash !== 'string' || !hash) return null;
+  const params = new URLSearchParams(hash.replace(/^#\/?/, ''));
+  const apiKey = (params.get('key') || '').trim();
+  if (!apiKey) return null;
+  const provider = params.get('provider') || 'ship24';
+  if (!PROVIDERS[provider]) return null;
+  const out = { provider, apiKey };
+  const plan = params.get('plan');
+  if (plan === 'per-shipment' || plan === 'per-call') out.ship24Plan = plan;
+  return out;
+}
+
 export function tmCode(carrierKey) {
   return (carrierKey && CARRIERS[carrierKey] && CARRIERS[carrierKey].tm) || null;
 }
