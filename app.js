@@ -2,15 +2,16 @@
 
 import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, universalLinks } from './carriers.js';
 import { PROVIDERS, fetchTracking, testKey, parseSetupHash } from './providers.js';
-import { statusLabel, stampText, relativeTime, eventTime, milestoneStep, parseTime } from './format.js';
+import { statusLabel, arrivalCopy, statusTone, relativeTime, eventTime, milestoneStep, parseTime } from './format.js';
 
 const STORAGE_KEY = 'shiptrack.v1';
 const STORES = ['Shop', 'eBay', 'Amazon', 'AliExpress', 'Shein', 'Temu', 'Noon', 'Shop & Ship', 'Etsy', 'Other'];
 const AUTO_REFRESH_MS = 20 * 60 * 1000;
 const STATUS_PRIORITY = { out_for_delivery: 0, available_for_pickup: 1, failed_attempt: 2, exception: 3, in_transit: 4, info_received: 5, pending: 6, expired: 7 };
-const STEP_NAMES = ['Info', 'Transit', 'Out', 'Delivered'];
+const STEP_NAMES = ['Label', 'Transit', 'Out', 'Delivered'];
+const FILTERS = ['active', 'delivered', 'all'];
 
-// Provider courier codes -> local carrier keys (for deep links and the big carrier label).
+// Provider courier codes -> local carrier keys (for deep links and the carrier label).
 const PROVIDER_CARRIER = {
   'us-post': 'usps', 'ae-post': 'emirates-post', 'cn-post': 'china-post', 'gb-post': 'royal-mail', 'de-post': 'deutsche-post',
   'jp-post': 'japan-post', 'ca-post': 'canada-post', 'au-post': 'australia-post', 'fr-post': 'la-poste', 'es-post': 'correos',
@@ -29,11 +30,11 @@ const state = {
   editing: null, // { id, item, store, notes, carrier }
   busy: new Set(),
 };
-const seenStatus = new Map(); // id -> status rendered last time (drives the stamp animation)
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const icon = (name) => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 
@@ -78,26 +79,7 @@ function carrierFromProviderCode(code) {
 function carrierLabel(s) {
   if (s.carrier && CARRIERS[s.carrier]) return CARRIERS[s.carrier].name;
   if (s.track && s.track.courier) return s.track.courier;
-  return 'Carrier?';
-}
-
-function stampColor(track) {
-  if (!track) return 'var(--ink-3)';
-  switch (track.status) {
-    case 'delivered': return 'var(--green)';
-    case 'out_for_delivery':
-    case 'available_for_pickup': return 'var(--tape)';
-    case 'failed_attempt':
-    case 'exception': return 'var(--red)';
-    case 'pending':
-    case 'expired': return 'var(--ink-3)';
-    default: {
-      const line = stampText(track);
-      if (line.line1 === 'Overdue') return 'var(--red)';
-      if (line.line2 === 'Today' || line.line2 === 'Tomorrow') return 'var(--tape)';
-      return 'var(--ink)';
-    }
-  }
+  return 'Carrier unknown';
 }
 
 function newShipment(number) {
@@ -107,6 +89,13 @@ function newShipment(number) {
     item: '', store: '', notes: '', createdAt: new Date().toISOString(), archived: false,
     track: null, error: null, ref: {}, lastFetch: null,
   };
+}
+
+function etaDate(s) {
+  const eta = s.track && s.track.eta;
+  if (!eta) return null;
+  const d = parseTime(eta.date) || parseTime(eta.from) || parseTime(eta.to);
+  return d ? d.getTime() : null;
 }
 
 function sortForBoard(list) {
@@ -131,13 +120,6 @@ function sortForBoard(list) {
   });
 }
 
-function etaDate(s) {
-  const eta = s.track && s.track.eta;
-  if (!eta) return null;
-  const d = parseTime(eta.date) || parseTime(eta.from) || parseTime(eta.to);
-  return d ? d.getTime() : null;
-}
-
 function visibleShipments() {
   const all = sortForBoard(state.shipments);
   if (state.filter === 'active') return all.filter(isActive);
@@ -151,7 +133,7 @@ function toast(msg) {
   el.textContent = msg;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
 }
 
 function showAddHint(msg, kind = '') {
@@ -159,6 +141,16 @@ function showAddHint(msg, kind = '') {
   el.textContent = msg;
   el.className = `hint ${kind}`;
   el.hidden = !msg;
+}
+
+function setFilter(filter, { pushUrl = true } = {}) {
+  state.filter = FILTERS.includes(filter) ? filter : 'active';
+  if (pushUrl) {
+    const url = new URL(location.href);
+    if (state.filter === 'active') url.searchParams.delete('filter'); else url.searchParams.set('filter', state.filter);
+    history.replaceState(null, '', url.pathname + url.search);
+  }
+  render();
 }
 
 // --- rendering ---------------------------------------------------------------
@@ -171,18 +163,21 @@ function render() {
 
 function renderSummary() {
   const active = state.shipments.filter(isActive);
-  const parts = [];
   const count = (fn) => active.filter(fn).length;
-  const today = count((s) => s.track && (s.track.status === 'out_for_delivery' || stampText(s.track).line2 === 'Today'));
+  const items = [];
+  const today = count((s) => s.track && (s.track.status === 'out_for_delivery' || arrivalCopy(s.track).headline === 'Arriving today'));
   const pickup = count((s) => s.track && s.track.status === 'available_for_pickup');
-  const transit = count((s) => s.track && (s.track.status === 'in_transit' || s.track.status === 'info_received'));
+  const transit = count((s) => s.track && (s.track.status === 'in_transit' || s.track.status === 'info_received') && arrivalCopy(s.track).headline !== 'Arriving today');
   const trouble = count((s) => s.track && ['failed_attempt', 'exception'].includes(s.track.status));
-  if (today) parts.push(`${today} arriving today`);
-  if (pickup) parts.push(`${pickup} to pick up`);
-  if (transit) parts.push(`${transit} in transit`);
-  if (trouble) parts.push(`${trouble} need attention`);
-  if (!parts.length && active.length) parts.push(`${active.length} on the board`);
-  $('#summary').textContent = parts.join(' · ');
+  const waiting = count((s) => !s.track || s.track.status === 'pending');
+  if (today) items.push({ tone: 'live', text: `<strong>${today}</strong> arriving today` });
+  if (pickup) items.push({ tone: 'live', text: `<strong>${pickup}</strong> ready for pickup` });
+  if (trouble) items.push({ tone: 'warn', text: `<strong>${trouble}</strong> need${trouble === 1 ? 's' : ''} attention` });
+  if (transit) items.push({ tone: '', text: `<strong>${transit}</strong> in transit` });
+  if (waiting) items.push({ tone: '', text: `<strong>${waiting}</strong> waiting for a scan` });
+  if (!items.length) items.push({ tone: 'done', text: active.length ? `<strong>${active.length}</strong> on the board` : 'Nothing on the way' });
+  $('#summary').innerHTML = items.map((i) => `<li><span class="dot ${i.tone}"></span><span>${i.text}</span></li>`).join('');
+  $('#summaryLine').innerHTML = items.slice(0, 3).map((i) => i.text).join(' <span class="muted">·</span> ');
 }
 
 function renderFilters() {
@@ -192,10 +187,13 @@ function renderFilters() {
     all: state.shipments.length,
   };
   for (const el of $$('[data-count]')) el.textContent = counts[el.dataset.count];
-  for (const el of $$('.chip[data-filter]')) el.classList.toggle('is-active', el.dataset.filter === state.filter);
-  $('#refreshAll').hidden = !providerReady() || !counts.active;
-  const lr = $('#lastRefresh');
-  lr.textContent = providerReady() && state.lastRefresh ? `Refreshed ${relativeTime(state.lastRefresh)}` : '';
+  for (const el of $$('[data-filter]')) {
+    const active = el.dataset.filter === state.filter;
+    el.classList.toggle('is-active', active);
+    el.setAttribute('aria-pressed', String(active));
+  }
+  for (const el of $$('[data-action="refresh-all"]')) el.hidden = !providerReady() || !counts.active;
+  $('#lastRefresh').textContent = providerReady() && state.lastRefresh ? `Refreshed ${relativeTime(state.lastRefresh)}` : '';
 }
 
 function renderList() {
@@ -205,20 +203,20 @@ function renderList() {
 
   if (!state.shipments.length) {
     list.innerHTML = `<div class="empty">
+      <div class="glyph">${icon('package')}</div>
       <h2>No parcels yet</h2>
-      <p>Paste a tracking number or the link from a shipping email above. The carrier is worked out automatically.</p>
-      <p class="carriers">USPS · UPS · FedEx · DHL · Aramex · Shop &amp; Ship · Emirates Post · Amazon · China Post · Cainiao · 1,500+ more</p>
+      <p>Paste a tracking number or the link from a shipping email. The carrier is worked out for you.</p>
+      <div class="carriers">${['USPS', 'UPS', 'FedEx', 'DHL', 'Aramex', 'Shop & Ship', 'Emirates Post', 'Amazon', 'China Post', 'Cainiao', '1,500+ more'].map((c) => `<span>${esc(c)}</span>`).join('')}</div>
     </div>`;
     return;
   }
   if (!items.length) {
     const msg = state.filter === 'active' ? 'Nothing on the way right now.' : state.filter === 'delivered' ? 'Nothing delivered yet.' : 'Nothing here.';
-    list.innerHTML = `<div class="empty"><p>${msg}</p></div>`;
+    list.innerHTML = `<div class="empty quiet"><p>${msg}</p></div>`;
     return;
   }
 
   list.innerHTML = items.map((s, i) => cardHTML(s, i)).join('');
-  for (const s of items) seenStatus.set(s.id, s.track ? s.track.status : 'none');
 
   if (focus && focus.id) {
     const el = document.getElementById(focus.id);
@@ -231,90 +229,74 @@ function renderList() {
 
 function cardHTML(s, index) {
   const t = s.track;
-  const stamp = stampText(t);
+  const copy = arrivalCopy(t);
+  const tone = statusTone(t);
   const ev = t && t.events && t.events[0];
   const editing = state.editing && state.editing.id === s.id;
   const expanded = state.expanded.has(s.id);
   const busy = state.busy.has(s.id);
-  const statusNow = t ? t.status : 'none';
-  const changed = seenStatus.get(s.id) !== statusNow;
   const linkName = s.carrier && CARRIERS[s.carrier] ? CARRIERS[s.carrier].name : '17TRACK';
-  const showVia = t && t.courier && (!s.carrier || carrierFromProviderCode(t.courier) !== s.carrier);
+  const pulse = t && (t.status === 'out_for_delivery' || t.status === 'available_for_pickup');
+  const chipText = t ? statusLabel(t.status) : busy ? 'Fetching…' : providerReady() ? 'Not fetched' : 'Not tracked';
 
-  let statusBlock;
+  let lead;
   if (t) {
-    statusBlock = `<div class="status-label">${esc(statusLabel(t.status))}</div>`
-      + (ev
-        ? `<div class="event-text">${esc(ev.text)}</div><div class="event-meta">${esc([ev.location, eventTime(ev.time)].filter(Boolean).join(' · '))}</div>`
-        : '<div class="event-text muted">No scans from the carrier yet.</div>')
-      + etaLineHTML(t);
+    lead = `<div class="arrival"><h3>${esc(copy.headline)}</h3>${copy.detail ? `<p>${esc(copy.detail)}</p>` : ''}</div>`;
+  } else if (busy) {
+    lead = '<div class="skeleton" aria-label="Fetching status"><span></span><span></span></div>';
   } else if (!providerReady()) {
-    statusBlock = '<div class="status-label">Not tracked</div><div class="event-text muted">Live status needs a free tracking key. <button type="button" class="link" data-action="open-settings">Set it up</button></div>';
+    lead = '<div class="arrival"><h3>Not tracked yet</h3><p>Live status needs a free tracking key. <button type="button" class="link" data-action="open-settings">Set it up</button></p></div>';
   } else {
-    statusBlock = `<div class="status-label">${busy ? 'Fetching' : 'Not fetched yet'}</div>${busy ? '' : '<div class="event-text muted"><button type="button" class="link" data-action="refresh">Fetch status</button></div>'}`;
+    lead = '<div class="arrival"><h3>Not fetched yet</h3><p><button type="button" class="link" data-action="refresh">Fetch status</button></p></div>';
   }
 
-  return `<article class="parcel${s.archived ? ' is-archived' : ''}" data-id="${s.id}" style="--stamp:${stampColor(t)}">
-    <header class="parcel-head">
-      <div class="parcel-title">
-        <h2>${s.item ? esc(s.item) : '<span class="muted">Untitled parcel</span>'}</h2>
-        ${s.store ? `<span class="store">${esc(s.store)}</span>` : ''}
-      </div>
-      <div class="carrier">${esc(carrierLabel(s))}</div>
-    </header>
-    <div class="tear"></div>
-    <div class="number-row">
-      <button type="button" class="number" data-action="copy" title="Copy tracking number">${esc(s.number)}</button>
-      ${showVia ? `<span class="via">via ${esc(t.courier)}</span>` : ''}
-      ${busy ? '<span class="spin" role="img" aria-label="Refreshing"></span>' : ''}
+  return `<article class="card tone-${tone}${s.archived ? ' is-archived' : ''}" data-id="${s.id}" style="--i:${Math.min(index, 10)}">
+    <div class="card-top">
+      <span class="chip${pulse ? ' pulse' : ''}"><span class="dot"></span>${esc(chipText)}</span>
+      <div class="card-meta"><span class="carrier">${esc(carrierLabel(s))}</span>${s.store ? `<span class="sep">·</span><span>${esc(s.store)}</span>` : ''}</div>
     </div>
-    <div class="parcel-body">
-      <div class="stamp${changed ? ' is-new' : ''}" style="animation-delay:${Math.min(index, 8) * 45}ms"><span class="l1">${esc(stamp.line1)}</span><span class="l2">${esc(stamp.line2)}</span></div>
-      <div class="status">${statusBlock}${s.error ? `<div class="error">${esc(s.error)}</div>` : ''}</div>
-    </div>
-    ${t ? stripHTML(t.status) : ''}
+    <h2 class="card-title">${s.item ? esc(s.item) : `<span class="untitled">Untitled parcel</span>${editing ? '' : '<button type="button" class="link" data-action="edit">Add a name</button>'}`}</h2>
+    ${lead}
+    ${t ? railHTML(s, t) : ''}
+    ${ev ? `<div class="latest">${icon('pin')}<div class="text">${esc(ev.text)}${ev.location ? ` <span class="when">· ${esc(ev.location)}</span>` : ''}${ev.time ? ` <span class="when">· ${esc(eventTime(ev.time))}</span>` : ''}</div></div>` : ''}
+    ${s.error ? `<div class="error-line">${icon('alert')}<span>${esc(s.error)}</span></div>` : ''}
     ${s.notes && !editing ? `<p class="notes">${esc(s.notes)}</p>` : ''}
-    <div class="actions">
-      ${t ? `<button type="button" class="text-btn" data-action="toggle-events">${expanded ? 'Hide events' : `Events${t.events.length ? ` (${t.events.length})` : ''}`}</button>` : ''}
-      <a class="text-btn" href="${esc(trackingUrl(s.carrier, s.number))}" target="_blank" rel="noopener">Open on ${esc(linkName)} ↗</a>
-      ${s.carrier ? `<a class="text-btn" href="${esc(universalLinks(s.number)[0].url)}" target="_blank" rel="noopener">17TRACK ↗</a>` : ''}
-      ${providerReady() && !isDelivered(s) ? '<button type="button" class="text-btn" data-action="refresh">Refresh</button>' : ''}
-      ${editing ? '' : `<button type="button" class="text-btn" data-action="edit">${s.item || s.notes || s.store ? 'Edit' : 'Add details'}</button>`}
-      ${isDelivered(s) || s.archived ? `<button type="button" class="text-btn" data-action="${s.archived ? 'unarchive' : 'archive'}">${s.archived ? 'Unarchive' : 'Archive'}</button>` : ''}
-    </div>
     ${expanded && t ? eventsHTML(t) : ''}
     ${editing ? detailsHTML(s) : ''}
+    <div class="card-foot">
+      <button type="button" class="number-btn" data-action="copy" title="Copy tracking number">${esc(s.number)}${icon('copy')}</button>
+      <div class="actions">
+        ${t ? `<button type="button" class="btn-ghost" data-action="toggle-events" aria-expanded="${expanded}">${icon('list')}${expanded ? 'Hide trail' : `Trail${t.events.length ? ` (${t.events.length})` : ''}`}</button>` : ''}
+        <a class="btn-ghost" href="${esc(trackingUrl(s.carrier, s.number))}" target="_blank" rel="noopener">${icon('out')}${esc(linkName)}</a>
+        ${providerReady() && !isDelivered(s) ? `<button type="button" class="btn-ghost" data-action="refresh"${busy ? ' disabled' : ''}>${icon('refresh')}Refresh</button>` : ''}
+        ${editing ? '' : `<button type="button" class="btn-ghost" data-action="edit">${icon('edit')}${s.item || s.notes || s.store ? 'Edit' : 'Details'}</button>`}
+        ${isDelivered(s) || s.archived ? `<button type="button" class="btn-ghost" data-action="${s.archived ? 'unarchive' : 'archive'}">${icon('archive')}${s.archived ? 'Unarchive' : 'Archive'}</button>` : ''}
+      </div>
+    </div>
   </article>`;
 }
 
-function etaLineHTML(t) {
-  if (!t.eta || t.status === 'delivered') {
-    if (t.status === 'delivered' && t.signedBy) return `<div class="eta-line">Signed by <strong>${esc(t.signedBy)}</strong></div>`;
-    return '';
-  }
-  const { date, from, to } = t.eta;
-  let text = '';
-  if (date) text = eventTime(date);
-  else if (from && to) text = `${eventTime(from)} – ${eventTime(to)}`;
-  else text = eventTime(from || to);
-  return text ? `<div class="eta-line">ETA <strong>${esc(text)}</strong></div>` : '';
-}
-
-function stripHTML(status) {
-  const { step, stalled } = milestoneStep(status);
+function railHTML(s, t) {
+  const { step, stalled } = milestoneStep(t.status);
   const p = step < 0 ? 0 : step / 3;
-  return `<div class="strip${stalled ? ' stalled' : ''}" role="img" aria-label="${esc(statusLabel(status))}">
-    <div class="fill" style="--p:${p}"></div>
-    ${STEP_NAMES.map((name, i) => `<div class="step${i < step ? ' done' : ''}${i === step ? ' now' : ''}"><div class="dot"></div><span>${name}</span></div>`).join('')}
+  const origin = t.origin || (s.carrier === 'usps' ? 'US' : null);
+  return `<div class="rail${stalled ? ' stalled' : ''}" role="img" aria-label="${esc(statusLabel(t.status))}, ${esc(origin || 'origin')} to ${esc(t.destination || 'destination')}">
+    <span class="end">${esc(origin || '—')}</span>
+    <div class="track">
+      <div class="line"></div>
+      <div class="fill" style="--p:${p}"></div>
+      ${STEP_NAMES.map((name, i) => `<div class="stop${i < step ? ' done' : ''}${i === step ? ' now' : ''}"><span class="pip"></span><span>${name}</span></div>`).join('')}
+    </div>
+    <span class="end">${esc(t.destination || '—')}</span>
   </div>`;
 }
 
 function eventsHTML(t) {
-  if (!t.events.length) return '<ul class="events"><li><span class="ev-text muted">No events yet.</span></li></ul>';
+  if (!t.events.length) return '<ul class="events"><li><span class="pip"></span><div class="ev-text muted">No events from the carrier yet.</div></li></ul>';
   const milestones = new Set(['delivered', 'out_for_delivery', 'available_for_pickup', 'failed_attempt', 'exception']);
   return `<ul class="events">${t.events.map((e) => `<li${milestones.has(e.milestone) ? ' class="is-milestone"' : ''}>
-      <time datetime="${esc(e.time || '')}">${esc(eventTime(e.time))}</time>
-      <div><div class="ev-text">${esc(e.text)}</div>${e.location ? `<div class="ev-loc">${esc(e.location)}</div>` : ''}</div>
+      <span class="pip"></span>
+      <div><div class="ev-text">${esc(e.text)}</div><div class="ev-meta">${esc([eventTime(e.time), e.location].filter(Boolean).join(' · '))}</div></div>
     </li>`).join('')}</ul>`;
 }
 
@@ -327,15 +309,15 @@ function detailsHTML(s) {
     .map((k) => `<option value="${k}"${d.carrier === k ? ' selected' : ''}>${esc(CARRIERS[k].name)}</option>`)
     .join('');
   return `<form class="details" data-id="${s.id}">
-    <label>What is it?<input id="f-item-${s.id}" data-field="item" value="${esc(d.item)}" placeholder="e.g. Blue Yeti mic" maxlength="120"></label>
-    <label>Store<input id="f-store-${s.id}" data-field="store" list="stores" value="${esc(d.store)}" placeholder="eBay, Shop, Amazon…" maxlength="40"></label>
-    <label>Carrier<select id="f-carrier-${s.id}" data-field="carrier"><option value=""${d.carrier ? '' : ' selected'}>Auto${detected ? ` (${esc(detected.name)})` : ''}</option>${options}</select></label>
-    <label class="wide">Notes<textarea id="f-notes-${s.id}" data-field="notes" rows="2" placeholder="Order number, seller, anything to remember">${esc(d.notes)}</textarea></label>
+    <label>What is it?<input id="f-item-${s.id}" name="item" data-field="item" value="${esc(d.item)}" placeholder="Blue Yeti microphone…" maxlength="120" autocomplete="off"></label>
+    <label>Store<input id="f-store-${s.id}" name="store" data-field="store" list="stores" value="${esc(d.store)}" placeholder="eBay…" maxlength="40" autocomplete="off"></label>
+    <label>Carrier<select id="f-carrier-${s.id}" name="carrier" data-field="carrier"><option value=""${d.carrier ? '' : ' selected'}>Auto${detected ? ` (${esc(detected.name)})` : ''}</option>${options}</select></label>
+    <label class="wide">Notes<textarea id="f-notes-${s.id}" name="notes" data-field="notes" rows="2" placeholder="Order number, seller, anything to remember…">${esc(d.notes)}</textarea></label>
     <div class="details-actions">
-      <button type="submit" class="btn btn-primary">Save</button>
-      <button type="button" class="text-btn" data-action="cancel">Cancel</button>
-      <span class="spacer"></span>
-      <button type="button" class="text-btn danger" data-action="delete">Delete parcel</button>
+      <button type="submit" class="btn btn-primary btn-sm">Save details</button>
+      <button type="button" class="btn-ghost" data-action="cancel">Cancel</button>
+      <span style="flex:1"></span>
+      <button type="button" class="btn-ghost danger" data-action="delete">Delete parcel</button>
     </div>
   </form>`;
 }
@@ -361,12 +343,11 @@ async function addFromInput(text) {
   }
   const created = fresh.map(newShipment);
   state.shipments.unshift(...created);
-  state.filter = 'active';
   state.editing = { id: created[0].id, item: '', store: '', notes: '', carrier: '' };
   $('#numberInput').value = '';
   showAddHint(created.length > 1 ? `Added ${created.length} parcels.` : '', 'is-ok');
   save();
-  render();
+  setFilter('active');
   const first = document.getElementById(`f-item-${created[0].id}`);
   if (first) first.focus({ preventScroll: false });
   if (providerReady()) {
@@ -469,6 +450,11 @@ function applyTheme() {
   else delete document.documentElement.dataset.theme;
 }
 
+function syncPlanUI() {
+  const current = ($('input[name="plan"]:checked') || {}).value || 'per-shipment';
+  for (const b of $$('[data-plan]')) b.classList.toggle('is-active', b.dataset.plan === current);
+}
+
 function openSettings() {
   const dlg = $('#settings');
   const s = state.settings;
@@ -482,6 +468,7 @@ function openSettings() {
   $('#keyResult').textContent = '';
   $('#keyResult').className = 'hint';
   syncProviderUI();
+  syncPlanUI();
   if (!dlg.open) dlg.showModal();
 }
 
@@ -507,6 +494,7 @@ function saveSettings() {
   applyTheme();
   save();
   render();
+  toast('Settings saved');
   if (providerReady() && !wasReady) refreshAll({ force: true });
 }
 
@@ -555,22 +543,20 @@ function wipe() {
 function wire() {
   $('#stores').innerHTML = STORES.map((s) => `<option value="${esc(s)}">`).join('');
 
+  const input = $('#numberInput');
   $('#addForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    addFromInput($('#numberInput').value);
+    addFromInput(input.value);
   });
-  $('#numberInput').addEventListener('input', () => showAddHint(''));
-  $('#numberInput').addEventListener('paste', (e) => {
-    const text = (e.clipboardData || window.clipboardData).getData('text');
-    if (text && extractNumbers(text).length) {
-      e.preventDefault();
-      addFromInput(text);
-    }
+  input.addEventListener('input', () => showAddHint(''));
+  // A paste that contains a tracking number is submitted straight away; the paste itself is never blocked.
+  input.addEventListener('paste', () => {
+    setTimeout(() => { if (extractNumbers(input.value).length) addFromInput(input.value); }, 0);
   });
 
-  for (const chip of $$('.chip[data-filter]')) chip.addEventListener('click', () => { state.filter = chip.dataset.filter; render(); });
-  $('#refreshAll').addEventListener('click', () => refreshAll({ force: true }));
-  $('#openSettings').addEventListener('click', openSettings);
+  for (const el of $$('[data-filter]')) el.addEventListener('click', () => setFilter(el.dataset.filter));
+  for (const el of $$('[data-action="refresh-all"]')) el.addEventListener('click', () => refreshAll({ force: true }));
+  for (const el of $$('[data-action="settings"]')) el.addEventListener('click', openSettings);
 
   const list = $('#list');
   list.addEventListener('click', (e) => {
@@ -615,6 +601,7 @@ function wire() {
   $('[data-action="close"]', dlg).addEventListener('click', () => dlg.close());
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
   for (const r of $$('input[name="provider"]')) r.addEventListener('change', syncProviderUI);
+  for (const b of $$('[data-plan]')) b.addEventListener('click', () => { $(`input[name="plan"][value="${b.dataset.plan}"]`).checked = true; syncPlanUI(); });
   $('#toggleKey').addEventListener('click', () => {
     const inp = $('#apiKey');
     inp.type = inp.type === 'password' ? 'text' : 'password';
@@ -623,9 +610,12 @@ function wire() {
   $('#testKey').addEventListener('click', async () => {
     const provider = ($('input[name="provider"]:checked') || {}).value || '';
     const out = $('#keyResult');
+    const btn = $('#testKey');
     out.textContent = 'Testing…';
     out.className = 'hint';
+    btn.disabled = true;
     const r = await testKey({ provider, apiKey: $('#apiKey').value.trim() });
+    btn.disabled = false;
     out.textContent = r.message;
     out.className = `hint ${r.ok ? 'is-ok' : 'is-error'}`;
   });
@@ -657,6 +647,6 @@ load();
 const fromLink = applySetupLink();
 applyTheme();
 wire();
-render();
+setFilter(new URLSearchParams(location.search).get('filter') || 'active', { pushUrl: false });
 registerSW();
 refreshAll({ force: fromLink });

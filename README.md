@@ -42,6 +42,10 @@ node --test tests/*.test.mjs
 
 Covers carrier detection and number extraction from links, both API adapters (against the documented response shapes, using a fake `fetch`), and the date and stamp copy helpers.
 
+## Design
+
+Arrival first: every card leads with when the parcel lands, a route rail shows where it is between origin and destination, and color appears only where it means status. Tokens and components are described in `DESIGN.md`; product truth in `PRODUCT.md`.
+
 ## Files
 
 | File | Role |

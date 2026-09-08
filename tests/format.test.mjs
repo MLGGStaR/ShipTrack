@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTime, statusLabel, stampText, relativeTime, eventTime, milestoneStep } from '../format.js';
+import { parseTime, statusLabel, arrivalCopy, statusTone, relativeTime, eventTime, milestoneStep } from '../format.js';
 
 const now = new Date('2026-09-08T12:00:00'); // a Tuesday, local time
 
@@ -35,41 +35,62 @@ test('statusLabel gives plain words', () => {
   assert.equal(statusLabel('whatever'), 'Unknown');
 });
 
-// --- stampText ---------------------------------------------------------------
+// --- arrivalCopy: the headline and detail line that lead every card ----------
 
-test('stamp: delivered shows the delivery day', () => {
-  assert.deepEqual(stampText({ status: 'delivered', deliveredAt: '2026-09-04T17:12:57' }, now), { line1: 'Delivered', line2: 'Fri 4 Sep' });
+const ev = (text, location) => ({ time: '2026-09-08T09:00:00', text, location, milestone: null });
+
+test('arrival: delivered shows when, and who signed', () => {
+  assert.deepEqual(arrivalCopy({ status: 'delivered', deliveredAt: '2026-09-04T17:12:57' }, now), { headline: 'Delivered', detail: 'Fri 4 Sep, 17:12' });
+  assert.deepEqual(arrivalCopy({ status: 'delivered', deliveredAt: '2026-09-04T17:12:57', signedBy: 'John' }, now), { headline: 'Delivered', detail: 'Fri 4 Sep, 17:12 · signed by John' });
+  assert.deepEqual(arrivalCopy({ status: 'delivered', deliveredAt: null, events: [] }, now), { headline: 'Delivered', detail: '' });
 });
 
-test('stamp: delivered without a date still reads delivered', () => {
-  assert.deepEqual(stampText({ status: 'delivered', deliveredAt: null, events: [] }, now), { line1: 'Delivered', line2: '' });
+test('arrival: out for delivery is arriving today, with the carrier time when known', () => {
+  assert.deepEqual(arrivalCopy({ status: 'out_for_delivery', eta: { date: '2026-09-08T18:00:00' } }, now), { headline: 'Arriving today', detail: 'by 18:00' });
+  assert.deepEqual(arrivalCopy({ status: 'out_for_delivery', eta: null }, now), { headline: 'Arriving today', detail: 'Out for delivery' });
 });
 
-test('stamp: in transit with an ETA says when', () => {
-  assert.deepEqual(stampText({ status: 'in_transit', eta: { date: '2026-09-08T18:00:00' } }, now), { line1: 'Arriving', line2: 'Today' });
-  assert.deepEqual(stampText({ status: 'in_transit', eta: { date: '2026-09-09' } }, now), { line1: 'Arriving', line2: 'Tomorrow' });
-  assert.deepEqual(stampText({ status: 'in_transit', eta: { date: '2026-09-12' } }, now), { line1: 'Arriving', line2: 'Sat 12 Sep' });
-  assert.deepEqual(stampText({ status: 'info_received', eta: { date: '2026-09-12' } }, now), { line1: 'Arriving', line2: 'Sat 12 Sep' });
+test('arrival: pickup, failed attempt, exception, expired and pending read plainly', () => {
+  assert.deepEqual(arrivalCopy({ status: 'available_for_pickup', events: [ev('Ready for collection', 'Dubai, AE')] }, now), { headline: 'Ready for pickup', detail: 'Dubai, AE' });
+  assert.deepEqual(arrivalCopy({ status: 'available_for_pickup', events: [] }, now), { headline: 'Ready for pickup', detail: 'Collect it from the carrier' });
+  assert.deepEqual(arrivalCopy({ status: 'failed_attempt', events: [ev('Customer not available', 'Abu Dhabi')] }, now), { headline: 'Delivery attempt failed', detail: 'Customer not available' });
+  assert.deepEqual(arrivalCopy({ status: 'failed_attempt', events: [] }, now), { headline: 'Delivery attempt failed', detail: 'The carrier will try again' });
+  assert.deepEqual(arrivalCopy({ status: 'exception', events: [ev('Held at customs', null)] }, now), { headline: 'Needs attention', detail: 'Held at customs' });
+  assert.deepEqual(arrivalCopy({ status: 'expired', events: [] }, now), { headline: 'No updates in 30 days', detail: 'Check with the carrier' });
+  assert.deepEqual(arrivalCopy({ status: 'pending', events: [] }, now), { headline: 'Waiting for first scan', detail: 'Usually updates within a day' });
 });
 
-test('stamp: an ETA range shows both days', () => {
-  assert.deepEqual(stampText({ status: 'in_transit', eta: { date: null, from: '2026-09-12', to: '2026-09-14' } }, now), { line1: 'Arriving', line2: '12–14 Sep' });
+test('arrival: in transit with an estimate says when', () => {
+  assert.deepEqual(arrivalCopy({ status: 'in_transit', eta: { date: '2026-09-08T18:00:00' } }, now), { headline: 'Arriving today', detail: 'by 18:00' });
+  assert.deepEqual(arrivalCopy({ status: 'in_transit', eta: { date: '2026-09-09' } }, now), { headline: 'Arriving tomorrow', detail: 'In transit' });
+  assert.deepEqual(arrivalCopy({ status: 'in_transit', eta: { date: '2026-09-12' } }, now), { headline: 'Arriving Sat 12 Sep', detail: 'In transit' });
+  assert.deepEqual(arrivalCopy({ status: 'info_received', eta: { date: '2026-09-12' } }, now), { headline: 'Arriving Sat 12 Sep', detail: 'Label created' });
+  assert.deepEqual(arrivalCopy({ status: 'in_transit', eta: { date: null, from: '2026-09-12', to: '2026-09-14' } }, now), { headline: 'Arriving 12–14 Sep', detail: 'In transit' });
 });
 
-test('stamp: a missed ETA is overdue', () => {
-  assert.deepEqual(stampText({ status: 'in_transit', eta: { date: '2026-09-05' } }, now), { line1: 'Overdue', line2: 'Due Sat 5 Sep' });
+test('arrival: a missed estimate is overdue, and no estimate says so', () => {
+  assert.deepEqual(arrivalCopy({ status: 'in_transit', eta: { date: '2026-09-05' } }, now), { headline: 'Overdue', detail: 'Was due Sat 5 Sep' });
+  assert.deepEqual(arrivalCopy({ status: 'in_transit', eta: null }, now), { headline: 'In transit', detail: 'No estimate yet' });
+  assert.deepEqual(arrivalCopy({ status: 'info_received', eta: null }, now), { headline: 'Label created', detail: 'Not scanned yet' });
+  assert.deepEqual(arrivalCopy(null, now), { headline: 'Not tracked yet', detail: '' });
 });
 
-test('stamp: statuses without an ETA', () => {
-  assert.deepEqual(stampText({ status: 'in_transit', eta: null }, now), { line1: 'In', line2: 'transit' });
-  assert.deepEqual(stampText({ status: 'info_received', eta: null }, now), { line1: 'Label', line2: 'created' });
-  assert.deepEqual(stampText({ status: 'out_for_delivery', eta: null }, now), { line1: 'Arriving', line2: 'Today' });
-  assert.deepEqual(stampText({ status: 'available_for_pickup' }, now), { line1: 'Ready for', line2: 'pickup' });
-  assert.deepEqual(stampText({ status: 'failed_attempt' }, now), { line1: 'Delivery', line2: 'failed' });
-  assert.deepEqual(stampText({ status: 'exception' }, now), { line1: 'Exception', line2: 'check carrier' });
-  assert.deepEqual(stampText({ status: 'expired' }, now), { line1: 'No updates', line2: '30+ days' });
-  assert.deepEqual(stampText({ status: 'pending' }, now), { line1: 'Waiting', line2: 'for scan' });
-  assert.deepEqual(stampText(null, now), { line1: 'Not', line2: 'tracked' });
+// --- statusTone: which of the status colors a card wears ---------------------
+
+test('statusTone maps statuses to live / done / warn / bad / idle / ink', () => {
+  assert.equal(statusTone({ status: 'delivered' }, now), 'done');
+  assert.equal(statusTone({ status: 'out_for_delivery' }, now), 'live');
+  assert.equal(statusTone({ status: 'available_for_pickup' }, now), 'live');
+  assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-08T18:00:00' } }, now), 'live');
+  assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-09' } }, now), 'live');
+  assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-12' } }, now), 'ink');
+  assert.equal(statusTone({ status: 'in_transit', eta: null }, now), 'ink');
+  assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-05' } }, now), 'warn');
+  assert.equal(statusTone({ status: 'failed_attempt' }, now), 'warn');
+  assert.equal(statusTone({ status: 'exception' }, now), 'bad');
+  assert.equal(statusTone({ status: 'pending' }, now), 'idle');
+  assert.equal(statusTone({ status: 'expired' }, now), 'idle');
+  assert.equal(statusTone(null, now), 'idle');
 });
 
 // --- relativeTime ------------------------------------------------------------

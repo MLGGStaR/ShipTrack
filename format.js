@@ -1,4 +1,4 @@
-// format.js — pure display helpers (dates, labels, stamp copy). No DOM.
+// format.js — pure display helpers (dates, labels, arrival copy). No DOM.
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -27,54 +27,108 @@ export function statusLabel(status) {
 
 const dayKey = (d) => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
 const pad = (n) => String(n).padStart(2, '0');
+const hasClock = (iso) => typeof iso === 'string' && /T\d{2}:\d{2}/.test(iso.replace(' ', 'T'));
 export const dayName = (d) => `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 const dayMonth = (d, now) => `${d.getDate()} ${MONTHS[d.getMonth()]}${d.getFullYear() !== now.getFullYear() ? ` ${d.getFullYear()}` : ''}`;
 
-function arrivalLine(eta, now) {
+// "Fri 4 Sep, 17:12" for a full timestamp, "Fri 4 Sep" for a bare date.
+function whenText(iso, now) {
+  const d = parseTime(iso);
+  if (!d) return '';
+  const year = d.getFullYear() !== now.getFullYear() ? ` ${d.getFullYear()}` : '';
+  const clock = hasClock(iso) && !(d.getHours() === 0 && d.getMinutes() === 0 && !/T00:00/.test(iso)) ? `, ${pad(d.getHours())}:${pad(d.getMinutes())}` : '';
+  return `${dayName(d)}${year}${clock}`;
+}
+
+// Reads a carrier estimate into one of: today (with a clock when given), tomorrow, a day, a range, or overdue.
+function arrivalWhen(eta, now) {
   if (!eta) return null;
   const date = parseTime(eta.date);
   const from = parseTime(eta.from);
   const to = parseTime(eta.to);
   let single = date || null;
-  if (!single && from && to && dayKey(from) === dayKey(to)) single = from;
-  if (!single && from && !to) single = from;
-  if (!single && !from && to) single = to;
+  let singleIso = eta.date;
+  if (!single && from && to && dayKey(from) === dayKey(to)) { single = from; singleIso = eta.from; }
+  if (!single && from && !to) { single = from; singleIso = eta.from; }
+  if (!single && !from && to) { single = to; singleIso = eta.to; }
 
+  const nk = dayKey(now);
   if (single) {
-    const dk = dayKey(single), nk = dayKey(now);
+    const dk = dayKey(single);
     const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
-    if (dk < nk) return { line1: 'Overdue', line2: `Due ${dayName(single)}` };
-    if (dk === nk) return { line1: 'Arriving', line2: 'Today' };
-    if (dk === dayKey(tomorrow)) return { line1: 'Arriving', line2: 'Tomorrow' };
-    return { line1: 'Arriving', line2: dayName(single) };
+    if (dk < nk) return { kind: 'overdue', due: dayName(single) };
+    const clock = hasClock(singleIso) && !(single.getHours() === 0 && single.getMinutes() === 0) ? `${pad(single.getHours())}:${pad(single.getMinutes())}` : null;
+    if (dk === nk) return { kind: 'today', clock };
+    if (dk === dayKey(tomorrow)) return { kind: 'tomorrow', clock };
+    return { kind: 'day', text: dayName(single), clock };
   }
   if (from && to) {
-    if (dayKey(to) < dayKey(now)) return { line1: 'Overdue', line2: `Due ${dayName(to)}` };
+    if (dayKey(to) < nk) return { kind: 'overdue', due: dayName(to) };
     const sameMonth = from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear();
-    const span = sameMonth ? `${from.getDate()}–${to.getDate()} ${MONTHS[to.getMonth()]}` : `${from.getDate()} ${MONTHS[from.getMonth()]}–${to.getDate()} ${MONTHS[to.getMonth()]}`;
-    return { line1: 'Arriving', line2: span };
+    const text = sameMonth ? `${from.getDate()}–${to.getDate()} ${MONTHS[to.getMonth()]}` : `${from.getDate()} ${MONTHS[from.getMonth()]}–${to.getDate()} ${MONTHS[to.getMonth()]}`;
+    return { kind: 'range', text };
   }
   return null;
 }
 
-// The two lines printed on a card's status stamp.
-export function stampText(track, now = new Date()) {
-  if (!track) return { line1: 'Not', line2: 'tracked' };
+// The headline and detail line that lead every card: the answer to "when?".
+export function arrivalCopy(track, now = new Date()) {
+  if (!track) return { headline: 'Not tracked yet', detail: '' };
+  const ev = (track.events || [])[0];
+  const when = arrivalWhen(track.eta, now);
   switch (track.status) {
     case 'delivered': {
-      const ev = (track.events || []).find((e) => e.milestone === 'delivered');
-      const d = parseTime(track.deliveredAt) || (ev ? parseTime(ev.time) : null);
-      return { line1: 'Delivered', line2: d ? dayName(d) : '' };
+      const deliveredEvent = (track.events || []).find((e) => e.milestone === 'delivered');
+      const iso = track.deliveredAt || (deliveredEvent ? deliveredEvent.time : null);
+      const text = whenText(iso, now);
+      return { headline: 'Delivered', detail: text ? `${text}${track.signedBy ? ` · signed by ${track.signedBy}` : ''}` : '' };
     }
-    case 'out_for_delivery': return { line1: 'Arriving', line2: 'Today' };
-    case 'available_for_pickup': return { line1: 'Ready for', line2: 'pickup' };
-    case 'failed_attempt': return { line1: 'Delivery', line2: 'failed' };
-    case 'exception': return { line1: 'Exception', line2: 'check carrier' };
-    case 'expired': return { line1: 'No updates', line2: '30+ days' };
-    case 'pending': return { line1: 'Waiting', line2: 'for scan' };
-    case 'in_transit': return arrivalLine(track.eta, now) || { line1: 'In', line2: 'transit' };
-    case 'info_received': return arrivalLine(track.eta, now) || { line1: 'Label', line2: 'created' };
-    default: return { line1: statusLabel(track.status), line2: '' };
+    case 'out_for_delivery':
+      return { headline: 'Arriving today', detail: when && when.kind === 'today' && when.clock ? `by ${when.clock}` : 'Out for delivery' };
+    case 'available_for_pickup':
+      return { headline: 'Ready for pickup', detail: (ev && ev.location) || 'Collect it from the carrier' };
+    case 'failed_attempt':
+      return { headline: 'Delivery attempt failed', detail: (ev && ev.text) || 'The carrier will try again' };
+    case 'exception':
+      return { headline: 'Needs attention', detail: (ev && ev.text) || 'Check with the carrier' };
+    case 'expired':
+      return { headline: 'No updates in 30 days', detail: 'Check with the carrier' };
+    case 'pending':
+      return { headline: 'Waiting for first scan', detail: 'Usually updates within a day' };
+    case 'in_transit':
+    case 'info_received': {
+      const base = track.status === 'in_transit' ? 'In transit' : 'Label created';
+      if (!when) return { headline: base, detail: track.status === 'in_transit' ? 'No estimate yet' : 'Not scanned yet' };
+      if (when.kind === 'overdue') return { headline: 'Overdue', detail: `Was due ${when.due}` };
+      if (when.kind === 'today') return { headline: 'Arriving today', detail: when.clock ? `by ${when.clock}` : base };
+      if (when.kind === 'tomorrow') return { headline: 'Arriving tomorrow', detail: base };
+      return { headline: `Arriving ${when.text}`, detail: base };
+    }
+    default:
+      return { headline: statusLabel(track.status), detail: '' };
+  }
+}
+
+// Which status color a card wears: live (happening now), done, warn, bad, idle, or plain ink.
+export function statusTone(track, now = new Date()) {
+  if (!track) return 'idle';
+  switch (track.status) {
+    case 'delivered': return 'done';
+    case 'out_for_delivery':
+    case 'available_for_pickup': return 'live';
+    case 'failed_attempt': return 'warn';
+    case 'exception': return 'bad';
+    case 'pending':
+    case 'expired': return 'idle';
+    case 'in_transit':
+    case 'info_received': {
+      const when = arrivalWhen(track.eta, now);
+      if (!when) return 'ink';
+      if (when.kind === 'overdue') return 'warn';
+      if (when.kind === 'today' || when.kind === 'tomorrow') return 'live';
+      return 'ink';
+    }
+    default: return 'idle';
   }
 }
 
@@ -100,7 +154,7 @@ export function eventTime(iso, now = new Date()) {
   return dateOnly ? dayMonth(d, now) : `${dayMonth(d, now)}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// Position on the 4-step strip: info received → in transit → out for delivery → delivered.
+// Position on the 4-step rail: label created → in transit → out for delivery → delivered.
 export function milestoneStep(status) {
   switch (status) {
     case 'info_received': return { step: 0, stalled: false };
