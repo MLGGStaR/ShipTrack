@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectCarrier, extractNumbers, trackingUrl, looksLikeOrderNumber, CARRIERS } from '../carriers.js';
+import { detectCarrier, extractNumbers, trackingUrl, looksLikeOrderNumber, orderRefFrom, CARRIERS } from '../carriers.js';
+
+test('orderRefFrom pulls the bare order number out of the usual ways people write it', () => {
+  assert.equal(orderRefFrom('14431'), '14431');
+  assert.equal(orderRefFrom('#14431'), '14431');
+  assert.equal(orderRefFrom('Order #1004'), '1004');
+  assert.equal(orderRefFrom('  order 2201567 '), '2201567');
+  assert.equal(orderRefFrom('1Z999AA10123456784'), null);
+  assert.equal(orderRefFrom('hello'), null);
+  assert.equal(orderRefFrom(''), null);
+});
 
 // --- looksLikeOrderNumber: a store order number pasted instead of a tracking number ---
 

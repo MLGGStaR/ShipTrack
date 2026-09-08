@@ -1,6 +1,6 @@
 // app.js — the board: storage, add/refresh flows and rendering. Logic lives in carriers.js, providers.js, format.js.
 
-import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, looksLikeOrderNumber } from './carriers.js';
+import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, orderRefFrom } from './carriers.js';
 import { PROVIDERS, fetchTracking, testKey, parseSetupHash } from './providers.js';
 import { statusLabel, arrivalCopy, statusTone, relativeTime, eventTime, milestoneStep, parseTime } from './format.js';
 
@@ -66,6 +66,8 @@ function save() {
 const providerReady = () => Boolean(PROVIDERS[state.settings.provider] && state.settings.apiKey);
 const isDelivered = (s) => Boolean(s.track && s.track.status === 'delivered');
 const isActive = (s) => !s.archived && !isDelivered(s);
+// An order that has not shipped yet: a store order number, no tracking number.
+const isOrderOnly = (s) => !s.number;
 
 function carrierFromProviderCode(code) {
   if (!code) return null;
@@ -85,11 +87,13 @@ function carrierLabel(s) {
 function newShipment(number) {
   const hit = detectCarrier(number);
   return {
-    id: uid(), number, carrier: hit ? hit.key : null, carrierPicked: false,
+    id: uid(), number, carrier: hit ? hit.key : null, carrierPicked: false, orderRef: '',
     item: '', store: '', notes: '', createdAt: new Date().toISOString(), archived: false,
     track: null, error: null, ref: {}, lastFetch: null,
   };
 }
+
+const newOrder = (ref) => ({ ...newShipment(''), number: '', carrier: null, orderRef: ref });
 
 function etaDate(s) {
   const eta = s.track && s.track.eta;
@@ -98,24 +102,33 @@ function etaDate(s) {
   return d ? d.getTime() : null;
 }
 
+// Board order: the card being edited, then parcels still fetching, then live parcels by urgency,
+// then orders that have not shipped, then delivered, then archived.
+function bucket(s) {
+  if (s.archived) return 5;
+  if (isDelivered(s)) return 4;
+  if (isOrderOnly(s)) return 3;
+  if (!s.track) return 0;
+  return 1;
+}
+
 function sortForBoard(list) {
   const editingId = state.editing && state.editing.id;
   return list.slice().sort((a, b) => {
-    // the card being edited stays put at the top, and parcels not fetched yet wait there too
     if ((a.id === editingId) !== (b.id === editingId)) return a.id === editingId ? -1 : 1;
-    if (a.archived !== b.archived) return a.archived ? 1 : -1;
-    if (!a.track !== !b.track) return a.track ? 1 : -1;
-    const da = isDelivered(a), db = isDelivered(b);
-    if (da !== db) return da ? 1 : -1;
-    if (da && db) {
+    const ba = bucket(a), bb = bucket(b);
+    if (ba !== bb) return ba - bb;
+    if (ba === 4) {
       const ta = parseTime(a.track.deliveredAt), tb = parseTime(b.track.deliveredAt);
       return (tb ? tb.getTime() : 0) - (ta ? ta.getTime() : 0);
     }
-    const pa = a.track ? STATUS_PRIORITY[a.track.status] ?? 8 : 9;
-    const pb = b.track ? STATUS_PRIORITY[b.track.status] ?? 8 : 9;
-    if (pa !== pb) return pa - pb;
-    const ea = etaDate(a), eb = etaDate(b);
-    if (ea !== eb) return (ea ?? Infinity) - (eb ?? Infinity);
+    if (ba === 1) {
+      const pa = STATUS_PRIORITY[a.track.status] ?? 8;
+      const pb = STATUS_PRIORITY[b.track.status] ?? 8;
+      if (pa !== pb) return pa - pb;
+      const ea = etaDate(a), eb = etaDate(b);
+      if (ea !== eb) return (ea ?? Infinity) - (eb ?? Infinity);
+    }
     return (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0);
   });
 }
@@ -169,12 +182,14 @@ function renderSummary() {
   const pickup = count((s) => s.track && s.track.status === 'available_for_pickup');
   const transit = count((s) => s.track && (s.track.status === 'in_transit' || s.track.status === 'info_received') && arrivalCopy(s.track).headline !== 'Arriving today');
   const trouble = count((s) => s.track && ['failed_attempt', 'exception'].includes(s.track.status));
-  const waiting = count((s) => !s.track || s.track.status === 'pending');
+  const waiting = count((s) => !isOrderOnly(s) && (!s.track || s.track.status === 'pending'));
+  const orders = count(isOrderOnly);
   if (today) items.push({ tone: 'live', text: `<strong>${today}</strong> arriving today` });
   if (pickup) items.push({ tone: 'live', text: `<strong>${pickup}</strong> ready for pickup` });
   if (trouble) items.push({ tone: 'warn', text: `<strong>${trouble}</strong> need${trouble === 1 ? 's' : ''} attention` });
   if (transit) items.push({ tone: '', text: `<strong>${transit}</strong> in transit` });
   if (waiting) items.push({ tone: '', text: `<strong>${waiting}</strong> waiting for a scan` });
+  if (orders) items.push({ tone: '', text: `<strong>${orders}</strong> not shipped yet` });
   if (!items.length) items.push({ tone: 'done', text: active.length ? `<strong>${active.length}</strong> on the board` : 'Nothing on the way' });
   $('#summary').innerHTML = items.map((i) => `<li><span class="dot ${i.tone}"></span><span>${i.text}</span></li>`).join('');
   $('#summaryLine').innerHTML = items.slice(0, 3).map((i) => i.text).join(' <span class="muted">·</span> ');
@@ -227,7 +242,29 @@ function renderList() {
   }
 }
 
+function orderCardHTML(s, index) {
+  const editing = state.editing && state.editing.id === s.id;
+  return `<article class="card tone-idle${s.archived ? ' is-archived' : ''}" data-id="${s.id}" style="--i:${Math.min(index, 10)}">
+    <div class="card-top">
+      <span class="chip"><span class="dot"></span>Not shipped</span>
+      <div class="card-meta"><span class="carrier">${esc(s.store || 'Order')}</span></div>
+    </div>
+    <h2 class="card-title">${s.item ? esc(s.item) : `<span class="untitled">Untitled order</span>${editing ? '' : '<button type="button" class="link" data-action="edit">Add a name</button>'}`}</h2>
+    <div class="arrival"><h3>Not shipped yet</h3><p>No tracking number yet. Add it when the store sends it.</p></div>
+    ${s.notes && !editing ? `<p class="notes">${esc(s.notes)}</p>` : ''}
+    ${editing ? detailsHTML(s) : ''}
+    <div class="card-foot">
+      <button type="button" class="number-btn" data-action="copy" title="Copy order number">Order #${esc(s.orderRef)}${icon('copy')}</button>
+      <div class="actions">
+        ${editing ? '' : `<button type="button" class="btn-ghost" data-action="edit">${icon('plus')}Add tracking</button>`}
+        ${s.archived ? `<button type="button" class="btn-ghost" data-action="unarchive">${icon('archive')}Unarchive</button>` : editing ? '' : `<button type="button" class="btn-ghost" data-action="archive">${icon('archive')}Archive</button>`}
+      </div>
+    </div>
+  </article>`;
+}
+
 function cardHTML(s, index) {
+  if (isOrderOnly(s)) return orderCardHTML(s, index);
   const t = s.track;
   const copy = arrivalCopy(t);
   const tone = statusTone(t);
@@ -253,7 +290,7 @@ function cardHTML(s, index) {
   return `<article class="card tone-${tone}${s.archived ? ' is-archived' : ''}" data-id="${s.id}" style="--i:${Math.min(index, 10)}">
     <div class="card-top">
       <span class="chip${pulse ? ' pulse' : ''}"><span class="dot"></span>${esc(chipText)}</span>
-      <div class="card-meta"><span class="carrier">${esc(carrierLabel(s))}</span>${s.store ? `<span class="sep">·</span><span>${esc(s.store)}</span>` : ''}</div>
+      <div class="card-meta"><span class="carrier">${esc(carrierLabel(s))}</span>${s.store ? `<span class="sep">·</span><span>${esc(s.store)}</span>` : ''}${s.orderRef ? `<span class="sep">·</span><span>#${esc(s.orderRef)}</span>` : ''}</div>
     </div>
     <h2 class="card-title">${s.item ? esc(s.item) : `<span class="untitled">Untitled parcel</span>${editing ? '' : '<button type="button" class="link" data-action="edit">Add a name</button>'}`}</h2>
     ${lead}
@@ -308,11 +345,14 @@ function detailsHTML(s) {
     .sort((a, b) => CARRIERS[a].name.localeCompare(CARRIERS[b].name))
     .map((k) => `<option value="${k}"${d.carrier === k ? ' selected' : ''}>${esc(CARRIERS[k].name)}</option>`)
     .join('');
+  const orderOnly = isOrderOnly(s);
   return `<form class="details" data-id="${s.id}">
+    ${orderOnly ? `<label class="wide">Tracking number<input id="f-tracking-${s.id}" name="tracking" data-field="tracking" class="mono" value="${esc(d.tracking || '')}" placeholder="Paste it when the store sends it…" spellcheck="false" autocapitalize="characters" autocomplete="off"></label>` : ''}
     <label>What is it?<input id="f-item-${s.id}" name="item" data-field="item" value="${esc(d.item)}" placeholder="Blue Yeti microphone…" maxlength="120" autocomplete="off"></label>
     <label>Store<input id="f-store-${s.id}" name="store" data-field="store" list="stores" value="${esc(d.store)}" placeholder="eBay…" maxlength="40" autocomplete="off"></label>
-    <label>Carrier<select id="f-carrier-${s.id}" name="carrier" data-field="carrier"><option value=""${d.carrier ? '' : ' selected'}>Auto${detected ? ` (${esc(detected.name)})` : ''}</option>${options}</select></label>
-    <label class="wide">Notes<textarea id="f-notes-${s.id}" name="notes" data-field="notes" rows="2" placeholder="Order number, seller, anything to remember…">${esc(d.notes)}</textarea></label>
+    <label>Order number<input id="f-order-${s.id}" name="orderRef" data-field="orderRef" value="${esc(d.orderRef || '')}" placeholder="14431" maxlength="40" autocomplete="off"></label>
+    ${orderOnly ? '' : `<label>Carrier<select id="f-carrier-${s.id}" name="carrier" data-field="carrier"><option value=""${d.carrier ? '' : ' selected'}>Auto${detected ? ` (${esc(detected.name)})` : ''}</option>${options}</select></label>`}
+    <label class="wide">Notes<textarea id="f-notes-${s.id}" name="notes" data-field="notes" rows="2" placeholder="Seller, what it cost, anything to remember…">${esc(d.notes)}</textarea></label>
     <div class="details-actions">
       <button type="submit" class="btn btn-primary btn-sm">Save details</button>
       <button type="button" class="btn-ghost" data-action="cancel">Cancel</button>
@@ -332,9 +372,9 @@ function findShipment(el) {
 async function addFromInput(text) {
   const numbers = extractNumbers(text);
   if (!numbers.length) {
-    showAddHint(looksLikeOrderNumber(text)
-      ? `${text.trim()} looks like a store order number, which carriers can't track. Open the order in the store or the Shop app and paste the tracking number or the "Track package" link.`
-      : 'No tracking number found in that. Paste the number itself or the carrier link.', 'is-error');
+    const ref = orderRefFrom(text);
+    if (ref) { addOrder(ref); return; }
+    showAddHint('No tracking number found in that. Paste the number itself or the carrier link.', 'is-error');
     return;
   }
   const existing = new Set(state.shipments.map((s) => s.number));
@@ -357,7 +397,26 @@ async function addFromInput(text) {
   }
 }
 
+// A store order number becomes a placeholder card until the tracking number arrives.
+function addOrder(ref) {
+  const existing = state.shipments.find((s) => isOrderOnly(s) && s.orderRef === ref);
+  if (existing) {
+    showAddHint(`Order #${ref} is already on the board.`, 'is-error');
+    return;
+  }
+  const order = newOrder(ref);
+  state.shipments.unshift(order);
+  state.editing = { id: order.id, item: '', store: '', notes: '', carrier: '', tracking: '', orderRef: ref };
+  $('#numberInput').value = '';
+  showAddHint(`Added order #${ref}. It will show as not shipped until you add the tracking number.`, 'is-ok');
+  save();
+  setFilter('active');
+  const first = document.getElementById(`f-item-${order.id}`);
+  if (first) first.focus({ preventScroll: false });
+}
+
 async function refreshShipment(s, { silent = false } = {}) {
+  if (!s.number) return;
   if (!providerReady()) { if (!silent) openSettings(); return; }
   if (state.busy.has(s.id)) return;
   state.busy.add(s.id);
@@ -386,7 +445,7 @@ let refreshingAll = false;
 async function refreshAll({ force = false } = {}) {
   if (!providerReady() || refreshingAll) return;
   const stale = (s) => force || !s.lastFetch || Date.now() - Date.parse(s.lastFetch) > AUTO_REFRESH_MS;
-  const targets = state.shipments.filter((s) => isActive(s) && stale(s));
+  const targets = state.shipments.filter((s) => isActive(s) && s.number && stale(s));
   if (!targets.length) return;
   refreshingAll = true;
   try {
@@ -400,25 +459,40 @@ async function refreshAll({ force = false } = {}) {
 }
 
 function startEdit(s) {
-  state.editing = { id: s.id, item: s.item || '', store: s.store || '', notes: s.notes || '', carrier: s.carrierPicked ? s.carrier || '' : '' };
+  state.editing = { id: s.id, item: s.item || '', store: s.store || '', notes: s.notes || '', carrier: s.carrierPicked ? s.carrier || '' : '', tracking: '', orderRef: s.orderRef || '' };
   render();
-  const el = document.getElementById(`f-item-${s.id}`);
+  const el = document.getElementById(isOrderOnly(s) ? `f-tracking-${s.id}` : `f-item-${s.id}`);
   if (el) el.focus();
 }
 
 function saveEdit(s) {
   const d = state.editing;
   if (!d || d.id !== s.id) return;
+  let attached = false;
+  if (isOrderOnly(s) && (d.tracking || '').trim()) {
+    const found = extractNumbers(d.tracking);
+    if (!found.length) { toast('That does not look like a tracking number.'); return; }
+    if (state.shipments.some((x) => x.number === found[0] && x.id !== s.id)) { toast('That tracking number is already on the board.'); return; }
+    s.number = found[0];
+    s.carrier = (detectCarrier(s.number) || {}).key || null;
+    s.carrierPicked = false;
+    s.track = null; s.ref = {}; s.error = null; s.lastFetch = null;
+    attached = true;
+  }
   s.item = d.item.trim();
   s.store = d.store.trim();
   s.notes = d.notes.trim();
+  s.orderRef = (d.orderRef || '').trim().replace(/^#/, '');
   const before = s.carrier;
-  if (d.carrier) { s.carrier = d.carrier; s.carrierPicked = true; }
-  else if (s.carrierPicked) { s.carrierPicked = false; s.carrier = (detectCarrier(s.number) || {}).key || null; }
+  if (!isOrderOnly(s) && !attached) {
+    if (d.carrier) { s.carrier = d.carrier; s.carrierPicked = true; }
+    else if (s.carrierPicked) { s.carrierPicked = false; s.carrier = (detectCarrier(s.number) || {}).key || null; }
+  }
   state.editing = null;
   save();
   render();
-  if (s.carrier !== before && providerReady()) {
+  if (attached) { toast('Tracking number added'); if (providerReady()) refreshShipment(s, { silent: true }); }
+  else if (s.carrier !== before && providerReady()) {
     s.ref = {};
     s.track = null;
     refreshShipment(s, { silent: true });
@@ -426,7 +500,7 @@ function saveEdit(s) {
 }
 
 function deleteShipment(s) {
-  if (!confirm(`Delete ${s.item || s.number} from the board?`)) return;
+  if (!confirm(`Delete ${s.item || s.number || `order #${s.orderRef}`} from the board?`)) return;
   state.shipments = state.shipments.filter((x) => x.id !== s.id);
   if (state.editing && state.editing.id === s.id) state.editing = null;
   state.expanded.delete(s.id);
@@ -437,8 +511,8 @@ function deleteShipment(s) {
 
 async function copyNumber(s) {
   try {
-    await navigator.clipboard.writeText(s.number);
-    toast('Tracking number copied');
+    await navigator.clipboard.writeText(s.number || s.orderRef);
+    toast(s.number ? 'Tracking number copied' : 'Order number copied');
   } catch {
     toast('Copy is blocked here. Select the number instead.');
   }
@@ -517,8 +591,8 @@ async function importData(file) {
     const data = JSON.parse(await file.text());
     const incoming = Array.isArray(data.shipments) ? data.shipments : null;
     if (!incoming) throw new Error('no shipments');
-    const have = new Set(state.shipments.map((s) => s.number));
-    const added = incoming.filter((s) => s && s.number && !have.has(s.number));
+    const have = new Set(state.shipments.map((s) => s.number).filter(Boolean));
+    const added = incoming.filter((s) => s && (s.number || s.orderRef) && !(s.number && have.has(s.number)));
     state.shipments.push(...added.map((s) => ({ ...newShipment(s.number), ...s, id: s.id && !state.shipments.some((x) => x.id === s.id) ? s.id : uid() })));
     if (data.settings) {
       const { apiKey, ...rest } = data.settings;

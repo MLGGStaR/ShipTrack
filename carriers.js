@@ -123,9 +123,13 @@ export function extractNumbers(text) {
 }
 
 // A short bare number ("14431", "Order #1004") is a store's order number, which no carrier can track.
+export function orderRefFrom(text) {
+  const m = String(text || '').trim().match(/^(?:order\s*)?#?(\d{3,7})$/i);
+  return m ? m[1] : null;
+}
+
 export function looksLikeOrderNumber(text) {
-  const t = String(text || '').trim();
-  return /^(order\s*)?#?\d{3,7}$/i.test(t);
+  return orderRefFrom(text) !== null;
 }
 
 export function trackingUrl(key, number) {
