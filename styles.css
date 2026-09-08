@@ -14,11 +14,16 @@
   --ink: #111114;
   --ink-2: #5c5c66;
   --ink-3: #74747e;
-  --live: #3b82f6;  --live-ink: #2563eb;  --live-tint: #e8f0fe;
-  --done: #22c55e;  --done-ink: #15803d;  --done-tint: #e6f6ec;
-  --warn: #f59e0b;  --warn-ink: #b45309;  --warn-tint: #fdf1dc;
-  --bad: #ef4444;   --bad-ink: #dc2626;   --bad-tint: #fdeaea;
-  --idle: #a1a1aa;  --idle-ink: #6b6b75;  --idle-tint: #ededf1;
+  --live: #3b82f6;     --live-ink: #2563eb;     --live-tint: #e8f0fe;
+  --pickup: #14b8a6;   --pickup-ink: #0f766e;   --pickup-tint: #e0f5f2;
+  --transit: #8b5cf6;  --transit-ink: #6d28d9;  --transit-tint: #efe9fe;
+  --label: #f97316;    --label-ink: #c2410c;    --label-tint: #feeee3;
+  --pending: #f97316;  --pending-ink: #c2410c;  --pending-tint: #feeee3;
+  --order: #ec4899;    --order-ink: #be185d;    --order-tint: #fde8f1;
+  --done: #22c55e;     --done-ink: #15803d;     --done-tint: #e6f6ec;
+  --warn: #f59e0b;     --warn-ink: #b45309;     --warn-tint: #fdf1dc;
+  --bad: #ef4444;      --bad-ink: #dc2626;      --bad-tint: #fdeaea;
+  --idle: #a1a1aa;     --idle-ink: #6b6b75;     --idle-tint: #ededf1;
   --ink-tint: #ededf1;
   --focus: #2563eb;
   --shadow-sheet: 0 1px 2px rgba(17, 17, 20, 0.04), 0 14px 36px -18px rgba(17, 17, 20, 0.16);
@@ -44,11 +49,16 @@
   --ink: #f2f2f4;
   --ink-2: #a6a6af;
   --ink-3: #85858e;
-  --live: #3b82f6;  --live-ink: #6aaaff;  --live-tint: rgba(96, 165, 250, 0.16);
-  --done: #22c55e;  --done-ink: #4ade80;  --done-tint: rgba(74, 222, 128, 0.14);
-  --warn: #f59e0b;  --warn-ink: #fbbf24;  --warn-tint: rgba(251, 191, 36, 0.14);
-  --bad: #ef4444;   --bad-ink: #f87171;   --bad-tint: rgba(248, 113, 113, 0.14);
-  --idle: #71717a;  --idle-ink: #a1a1aa;  --idle-tint: rgba(161, 161, 170, 0.14);
+  --live: #3b82f6;     --live-ink: #6aaaff;     --live-tint: rgba(96, 165, 250, 0.16);
+  --pickup: #14b8a6;   --pickup-ink: #2dd4bf;   --pickup-tint: rgba(45, 212, 191, 0.14);
+  --transit: #8b5cf6;  --transit-ink: #a78bfa;  --transit-tint: rgba(167, 139, 250, 0.16);
+  --label: #f97316;    --label-ink: #fb923c;    --label-tint: rgba(251, 146, 60, 0.14);
+  --pending: #f97316;  --pending-ink: #fb923c;  --pending-tint: rgba(251, 146, 60, 0.14);
+  --order: #ec4899;    --order-ink: #f472b6;    --order-tint: rgba(244, 114, 182, 0.14);
+  --done: #22c55e;     --done-ink: #4ade80;     --done-tint: rgba(74, 222, 128, 0.14);
+  --warn: #f59e0b;     --warn-ink: #fbbf24;     --warn-tint: rgba(251, 191, 36, 0.14);
+  --bad: #ef4444;      --bad-ink: #f87171;      --bad-tint: rgba(248, 113, 113, 0.14);
+  --idle: #71717a;     --idle-ink: #a1a1aa;     --idle-tint: rgba(161, 161, 170, 0.14);
   --ink-tint: rgba(242, 242, 244, 0.1);
   --focus: #6aaaff;
   --shadow-sheet: none;
@@ -68,11 +78,16 @@
     --ink: #f2f2f4;
     --ink-2: #a6a6af;
     --ink-3: #85858e;
-    --live: #3b82f6;  --live-ink: #6aaaff;  --live-tint: rgba(96, 165, 250, 0.16);
-    --done: #22c55e;  --done-ink: #4ade80;  --done-tint: rgba(74, 222, 128, 0.14);
-    --warn: #f59e0b;  --warn-ink: #fbbf24;  --warn-tint: rgba(251, 191, 36, 0.14);
-    --bad: #ef4444;   --bad-ink: #f87171;   --bad-tint: rgba(248, 113, 113, 0.14);
-    --idle: #71717a;  --idle-ink: #a1a1aa;  --idle-tint: rgba(161, 161, 170, 0.14);
+    --live: #3b82f6;     --live-ink: #6aaaff;     --live-tint: rgba(96, 165, 250, 0.16);
+    --pickup: #14b8a6;   --pickup-ink: #2dd4bf;   --pickup-tint: rgba(45, 212, 191, 0.14);
+    --transit: #8b5cf6;  --transit-ink: #a78bfa;  --transit-tint: rgba(167, 139, 250, 0.16);
+    --label: #f97316;    --label-ink: #fb923c;    --label-tint: rgba(251, 146, 60, 0.14);
+    --pending: #f97316;  --pending-ink: #fb923c;  --pending-tint: rgba(251, 146, 60, 0.14);
+    --order: #ec4899;    --order-ink: #f472b6;    --order-tint: rgba(244, 114, 182, 0.14);
+    --done: #22c55e;     --done-ink: #4ade80;     --done-tint: rgba(74, 222, 128, 0.14);
+    --warn: #f59e0b;     --warn-ink: #fbbf24;     --warn-tint: rgba(251, 191, 36, 0.14);
+    --bad: #ef4444;      --bad-ink: #f87171;      --bad-tint: rgba(248, 113, 113, 0.14);
+    --idle: #71717a;     --idle-ink: #a1a1aa;     --idle-tint: rgba(161, 161, 170, 0.14);
     --ink-tint: rgba(242, 242, 244, 0.1);
     --focus: #6aaaff;
     --shadow-sheet: none;
@@ -137,6 +152,10 @@ svg { display: block; flex-shrink: 0; }
 .summary li { display: flex; align-items: center; gap: 10px; }
 .summary .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
 .summary .dot.live { background: var(--live); }
+.summary .dot.pickup { background: var(--pickup); }
+.summary .dot.transit { background: var(--transit); }
+.summary .dot.pending { background: var(--pending); }
+.summary .dot.order { background: var(--order); }
 .summary .dot.done { background: var(--done); }
 .summary .dot.warn { background: var(--warn); }
 .summary .dot.bad { background: var(--bad); }
@@ -241,6 +260,11 @@ svg { display: block; flex-shrink: 0; }
   animation: card-in var(--t-base) var(--ease) both; animation-delay: calc(var(--i, 0) * 28ms);
 }
 .card.tone-live { --tone: var(--live); --tone-ink: var(--live-ink); --tone-tint: var(--live-tint); }
+.card.tone-pickup { --tone: var(--pickup); --tone-ink: var(--pickup-ink); --tone-tint: var(--pickup-tint); }
+.card.tone-transit { --tone: var(--transit); --tone-ink: var(--transit-ink); --tone-tint: var(--transit-tint); }
+.card.tone-label { --tone: var(--label); --tone-ink: var(--label-ink); --tone-tint: var(--label-tint); }
+.card.tone-pending { --tone: var(--pending); --tone-ink: var(--pending-ink); --tone-tint: var(--pending-tint); }
+.card.tone-order { --tone: var(--order); --tone-ink: var(--order-ink); --tone-tint: var(--order-tint); }
 .card.tone-done { --tone: var(--done); --tone-ink: var(--done-ink); --tone-tint: var(--done-tint); }
 .card.tone-warn { --tone: var(--warn); --tone-ink: var(--warn-ink); --tone-tint: var(--warn-tint); }
 .card.tone-bad { --tone: var(--bad); --tone-ink: var(--bad-ink); --tone-tint: var(--bad-tint); }

@@ -77,18 +77,20 @@ test('arrival: a missed estimate is overdue, and no estimate says so', () => {
 
 // --- statusTone: which of the status colors a card wears ---------------------
 
-test('statusTone maps statuses to live / done / warn / bad / idle / ink', () => {
+test('statusTone gives every state its own color family', () => {
   assert.equal(statusTone({ status: 'delivered' }, now), 'done');
   assert.equal(statusTone({ status: 'out_for_delivery' }, now), 'live');
-  assert.equal(statusTone({ status: 'available_for_pickup' }, now), 'live');
   assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-08T18:00:00' } }, now), 'live');
   assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-09' } }, now), 'live');
-  assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-12' } }, now), 'ink');
-  assert.equal(statusTone({ status: 'in_transit', eta: null }, now), 'ink');
+  assert.equal(statusTone({ status: 'info_received', eta: { date: '2026-09-09' } }, now), 'live');
+  assert.equal(statusTone({ status: 'available_for_pickup' }, now), 'pickup');
+  assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-12' } }, now), 'transit');
+  assert.equal(statusTone({ status: 'in_transit', eta: null }, now), 'transit');
+  assert.equal(statusTone({ status: 'info_received', eta: null }, now), 'label');
+  assert.equal(statusTone({ status: 'pending' }, now), 'pending');
   assert.equal(statusTone({ status: 'in_transit', eta: { date: '2026-09-05' } }, now), 'warn');
   assert.equal(statusTone({ status: 'failed_attempt' }, now), 'warn');
   assert.equal(statusTone({ status: 'exception' }, now), 'bad');
-  assert.equal(statusTone({ status: 'pending' }, now), 'idle');
   assert.equal(statusTone({ status: 'expired' }, now), 'idle');
   assert.equal(statusTone(null, now), 'idle');
 });

@@ -10,7 +10,7 @@ Arrival first. Every card leads with the answer to "when?" in a 26px line. Chrom
 
 - Canvas `--bg` #f3f3f5 (dark #0f0f11); sheets `--sheet` #ffffff (dark #1a1a1e); inset `--sheet-2`.
 - Ink `--ink` #111114 / `--ink-2` #5c5c66 / `--ink-3` #74747e. Dark: #f2f2f4 / #a6a6af / #85858e. All text pairings clear 4.5:1 on their sheet.
-- Status: `live` blue (#3b82f6, text #2563eb light / #6aaaff dark), `done` green, `warn` amber, `bad` red, `idle` gray. Each has a `-tint` for chips and rings. In transit with no near arrival wears plain ink.
+- Status, one color family per state (owner asked for this on 2026-09-08 after liking the blue "arriving tomorrow"): `live` blue = arriving today/tomorrow or out for delivery; `pickup` teal = ready for pickup; `transit` purple = in transit; `label` and `pending` orange = label created or waiting for the first scan; `order` pink = not shipped yet; `done` green = delivered; `warn` amber = failed attempt or overdue; `bad` red = exception; `idle` gray = expired or not tracked. Each has a `-ink` (text, ≥4.5:1 on its sheet) and a `-tint` (chip and ring). The rail fill, the chip, the arrival line and the sidebar dot all use the card's family.
 - Elevation, declared once per theme: light sheets carry a soft offset shadow and no border; dark sheets carry a 1px hairline and no shadow.
 - Radii: sheets 20px, controls 12px, chips pill. Spacing on a 4px unit: 2/4/6/8/10/12/14/16/18/20/22/28.
 - Type: Onest 400–700 for everything, tabular figures on; Red Hat Mono for tracking numbers and route codes only. Arrival line 26px/600, -0.02em. Title 16px/600. Body 14px. Meta 13px. Rail labels 11px.

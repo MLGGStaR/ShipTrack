@@ -187,11 +187,11 @@ function renderSummary() {
   const waiting = count((s) => !isOrderOnly(s) && (!s.track || s.track.status === 'pending'));
   const orders = count(isOrderOnly);
   if (today) items.push({ tone: 'live', text: `<strong>${today}</strong> arriving today` });
-  if (pickup) items.push({ tone: 'live', text: `<strong>${pickup}</strong> ready for pickup` });
+  if (pickup) items.push({ tone: 'pickup', text: `<strong>${pickup}</strong> ready for pickup` });
   if (trouble) items.push({ tone: 'warn', text: `<strong>${trouble}</strong> need${trouble === 1 ? 's' : ''} attention` });
-  if (transit) items.push({ tone: '', text: `<strong>${transit}</strong> in transit` });
-  if (waiting) items.push({ tone: '', text: `<strong>${waiting}</strong> waiting for a scan` });
-  if (orders) items.push({ tone: '', text: `<strong>${orders}</strong> not shipped yet` });
+  if (transit) items.push({ tone: 'transit', text: `<strong>${transit}</strong> in transit` });
+  if (waiting) items.push({ tone: 'pending', text: `<strong>${waiting}</strong> waiting for a scan` });
+  if (orders) items.push({ tone: 'order', text: `<strong>${orders}</strong> not shipped yet` });
   if (!items.length) items.push({ tone: 'done', text: active.length ? `<strong>${active.length}</strong> on the board` : 'Nothing on the way' });
   $('#summary').innerHTML = items.map((i) => `<li><span class="dot ${i.tone}"></span><span>${i.text}</span></li>`).join('');
   $('#summaryLine').innerHTML = items.slice(0, 3).map((i) => i.text).join(' <span class="muted">·</span> ');
@@ -246,7 +246,7 @@ function renderList() {
 
 function orderCardHTML(s, index) {
   const editing = state.editing && state.editing.id === s.id;
-  return `<article class="card tone-idle${s.archived ? ' is-archived' : ''}" data-id="${s.id}" style="--i:${Math.min(index, 10)}">
+  return `<article class="card tone-order${s.archived ? ' is-archived' : ''}" data-id="${s.id}" style="--i:${Math.min(index, 10)}">
     <div class="card-top">
       <span class="chip"><span class="dot"></span>Not shipped</span>
       <div class="card-meta"><span class="carrier">${esc(s.store || 'Order')}</span></div>
@@ -276,7 +276,7 @@ function cardHTML(s, index) {
   const busy = state.busy.has(s.id);
   const linkName = s.carrier && CARRIERS[s.carrier] ? CARRIERS[s.carrier].name : '17TRACK';
   const pulse = t && (t.status === 'out_for_delivery' || t.status === 'available_for_pickup');
-  const chipText = t ? statusLabel(t.status) : busy ? 'Fetching…' : providerReady() ? 'Not fetched' : 'Not tracked';
+  const chipText = t ? (t.status === 'pending' ? 'Waiting for scan' : t.status === 'info_received' ? 'Label created' : statusLabel(t.status)) : busy ? 'Fetching…' : providerReady() ? 'Not fetched' : 'Not tracked';
 
   let lead;
   if (t) {

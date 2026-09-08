@@ -109,24 +109,25 @@ export function arrivalCopy(track, now = new Date()) {
   }
 }
 
-// Which status color a card wears: live (happening now), done, warn, bad, idle, or plain ink.
+// Which color family a card wears. Each state has its own:
+// live (arriving today/tomorrow, out for delivery), pickup, transit, label (created, not scanned),
+// pending (waiting for the first scan), done, warn (failed attempt, overdue), bad (exception), idle.
 export function statusTone(track, now = new Date()) {
   if (!track) return 'idle';
   switch (track.status) {
     case 'delivered': return 'done';
-    case 'out_for_delivery':
-    case 'available_for_pickup': return 'live';
+    case 'out_for_delivery': return 'live';
+    case 'available_for_pickup': return 'pickup';
     case 'failed_attempt': return 'warn';
     case 'exception': return 'bad';
-    case 'pending':
+    case 'pending': return 'pending';
     case 'expired': return 'idle';
     case 'in_transit':
     case 'info_received': {
       const when = arrivalWhen(track.eta, now);
-      if (!when) return 'ink';
-      if (when.kind === 'overdue') return 'warn';
-      if (when.kind === 'today' || when.kind === 'tomorrow') return 'live';
-      return 'ink';
+      if (when && when.kind === 'overdue') return 'warn';
+      if (when && (when.kind === 'today' || when.kind === 'tomorrow')) return 'live';
+      return track.status === 'in_transit' ? 'transit' : 'label';
     }
     default: return 'idle';
   }
