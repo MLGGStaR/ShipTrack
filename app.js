@@ -1,6 +1,6 @@
 // app.js — the board: storage, add/refresh flows and rendering. Logic lives in carriers.js, providers.js, format.js.
 
-import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, orderRefFrom } from './carriers.js';
+import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, orderRefFrom, normalizeNumber } from './carriers.js';
 import { PROVIDERS, fetchTracking, testKey, parseSetupHash } from './providers.js';
 import { statusLabel, arrivalCopy, statusTone, relativeTime, eventTime, milestoneStep, parseTime } from './format.js';
 
@@ -149,9 +149,11 @@ function toast(msg) {
   toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
 }
 
-function showAddHint(msg, kind = '') {
+let pendingInput = ''; // what was pasted when nothing could be detected, kept for the "add anyway" buttons
+
+function showAddHint(msg, kind = '', actions = []) {
   const el = $('#addHint');
-  el.textContent = msg;
+  el.innerHTML = esc(msg) + actions.map((a) => ` <button type="button" class="link" data-action="${a.action}">${esc(a.label)}</button>`).join('');
   el.className = `hint ${kind}`;
   el.hidden = !msg;
 }
@@ -374,7 +376,13 @@ async function addFromInput(text) {
   if (!numbers.length) {
     const ref = orderRefFrom(text);
     if (ref) { addOrder(ref); return; }
-    showAddHint('No tracking number found in that. Paste the number itself or the carrier link.', 'is-error');
+    pendingInput = cleanRef(text);
+    if (!pendingInput) { showAddHint('Paste a tracking number, an order number or a carrier link.', 'is-error'); return; }
+    const short = pendingInput.length > 24 ? `${pendingInput.slice(0, 24)}…` : pendingInput;
+    showAddHint(`No tracking number found in “${short}”.`, 'is-error', [
+      { action: 'add-order', label: 'Add it as an order' },
+      { action: 'track-anyway', label: 'Track it anyway' },
+    ]);
     return;
   }
   const existing = new Set(state.shipments.map((s) => s.number));
@@ -395,6 +403,25 @@ async function addFromInput(text) {
   if (providerReady()) {
     for (const s of created) { await refreshShipment(s, { silent: true }); await sleep(350); }
   }
+}
+
+const cleanRef = (text) => String(text || '').trim().replace(/^order\s*/i, '').replace(/^#/, '').trim().slice(0, 40);
+
+// Something that is not a recognisable tracking number, tracked anyway: the tracking service gets to try.
+function trackAnyway(text) {
+  const n = normalizeNumber(text);
+  if (n.length < 4) { showAddHint('That is too short to be a tracking number.', 'is-error'); return; }
+  if (state.shipments.some((s) => s.number === n)) { showAddHint('That parcel is already on the board.', 'is-error'); return; }
+  const s = newShipment(n);
+  state.shipments.unshift(s);
+  state.editing = { id: s.id, item: '', store: '', notes: '', carrier: '', tracking: '', orderRef: '' };
+  $('#numberInput').value = '';
+  showAddHint('');
+  save();
+  setFilter('active');
+  const first = document.getElementById(`f-item-${s.id}`);
+  if (first) first.focus({ preventScroll: false });
+  if (providerReady()) refreshShipment(s, { silent: true });
 }
 
 // A store order number becomes a placeholder card until the tracking number arrives.
@@ -625,6 +652,12 @@ function wire() {
     addFromInput(input.value);
   });
   input.addEventListener('input', () => showAddHint(''));
+  $('#addHint').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-action]');
+    if (!b) return;
+    if (b.dataset.action === 'add-order') addOrder(pendingInput);
+    else if (b.dataset.action === 'track-anyway') trackAnyway(pendingInput);
+  });
   // A paste that contains a tracking number is submitted straight away; the paste itself is never blocked.
   input.addEventListener('paste', () => {
     setTimeout(() => { if (extractNumbers(input.value).length) addFromInput(input.value); }, 0);

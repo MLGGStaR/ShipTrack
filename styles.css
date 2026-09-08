@@ -217,6 +217,7 @@ svg { display: block; flex-shrink: 0; }
 .composer .hint { grid-column: 1 / -1; font-size: 13px; color: var(--ink-2); padding: 0 4px; }
 .hint.is-error { color: var(--bad-ink); }
 .hint.is-ok { color: var(--done-ink); }
+.hint .link { color: var(--ink); margin-left: 6px; font-weight: 600; }
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; border-radius: 12px; background: var(--sheet-2); border: 1px solid var(--line); }
