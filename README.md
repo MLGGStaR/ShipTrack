@@ -7,9 +7,9 @@ Live site: https://mlggstar.github.io/ShipTrack/
 ## What it does
 
 - Paste a number or link; the carrier is detected from the number format (USPS, UPS, FedEx, DHL, Aramex / Shop & Ship, Emirates Post, Amazon, Cainiao, Yun Express, China Post and other postal services by their S10 code).
-- Live status, latest scan, carrier ETA and the full event list come from a tracking service you connect once in Settings. Both have free plans:
-  - **TrackingMore**: 50 shipments a month free. Refreshing is free.
-  - **Ship24**: 10 shipments a month free on the per-shipment plan, or 100 calls a month on the per-call plan.
+- Live status, latest scan, carrier ETA and the full event list come from a tracking service you connect once in Settings:
+  - **Ship24** (recommended): free plan with 10 shipments a month, plus 100 extra in the first month. Refreshing a shipment is free on the per-shipment plan.
+  - **TrackingMore**: works the same way, but its free plan has no API access. The Basic plan (about $9 a month billed yearly, 150 shipments) is needed.
 - Every card has "Open on <carrier>" and 17TRACK links, so it stays useful with no key at all.
 - Add what the parcel is, which store it came from (Shop, eBay, Amazon, ...) and any notes. Delivered parcels can be archived.
 - Installable as a PWA (works offline for the board; live updates need a connection).
@@ -17,7 +17,7 @@ Live site: https://mlggstar.github.io/ShipTrack/
 ## Setup
 
 1. Open the site, tap the gear icon.
-2. Pick TrackingMore or Ship24, follow the "Get a key" link, sign up for the free plan and paste the key. Tap **Test**, then **Save**.
+2. Pick Ship24, follow the "Get a key" link, sign up, choose the **Free** plan under Subscriptions, create a key under Integrations → API keys, and paste it. Tap **Test**, then **Save**.
 3. Paste a tracking number. Done.
 
 The key and all parcel data stay in the browser's local storage. Nothing is sent anywhere except the tracking service you chose. Use **Export JSON** in Settings before switching phones.

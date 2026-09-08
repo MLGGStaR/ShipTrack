@@ -9,17 +9,17 @@ import { CARRIERS } from './carriers.js';
 import { parseTime } from './format.js';
 
 export const PROVIDERS = {
-  trackingmore: {
-    name: 'TrackingMore',
-    keyUrl: 'https://www.trackingmore.com/tracking-api',
-    free: '50 shipments a month free',
-    hint: 'Sign up, then copy the API key from the dashboard (Developer → API Keys).',
-  },
   ship24: {
     name: 'Ship24',
-    keyUrl: 'https://www.ship24.com/tracking-api',
-    free: '10 shipments a month free (per-shipment plan) or 100 calls a month (per-call plan)',
-    hint: 'Sign up for the free API plan, then copy the key from the dashboard.',
+    keyUrl: 'https://dashboard.ship24.com/integrations/api-keys',
+    free: '10 shipments a month free, plus 100 extra in the first month',
+    hint: 'Sign up at dashboard.ship24.com, choose the Free plan under Subscriptions, then create a key under Integrations → API keys.',
+  },
+  trackingmore: {
+    name: 'TrackingMore',
+    keyUrl: 'https://www.trackingmore.com/pricing',
+    free: 'no free API: needs the Basic plan, about $9 a month',
+    hint: 'The free plan has no API access. The Basic plan (14-day trial) gives API keys under Developer → API keys.',
   },
 };
 
