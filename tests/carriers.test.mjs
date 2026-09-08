@@ -1,6 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectCarrier, extractNumbers, trackingUrl, CARRIERS } from '../carriers.js';
+import { detectCarrier, extractNumbers, trackingUrl, looksLikeOrderNumber, CARRIERS } from '../carriers.js';
+
+// --- looksLikeOrderNumber: a store order number pasted instead of a tracking number ---
+
+test('looksLikeOrderNumber spots short store order numbers', () => {
+  assert.equal(looksLikeOrderNumber('14431'), true);
+  assert.equal(looksLikeOrderNumber('#14431'), true);
+  assert.equal(looksLikeOrderNumber('Order #1004'), true);
+  assert.equal(looksLikeOrderNumber('order 2201567'), true);
+});
+
+test('looksLikeOrderNumber leaves real tracking numbers and junk alone', () => {
+  assert.equal(looksLikeOrderNumber('1Z999AA10123456784'), false);
+  assert.equal(looksLikeOrderNumber('123456789012'), false);
+  assert.equal(looksLikeOrderNumber('hello there'), false);
+  assert.equal(looksLikeOrderNumber(''), false);
+});
 
 // --- detectCarrier -----------------------------------------------------------
 

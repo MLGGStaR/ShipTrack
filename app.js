@@ -1,6 +1,6 @@
 // app.js — the board: storage, add/refresh flows and rendering. Logic lives in carriers.js, providers.js, format.js.
 
-import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, universalLinks } from './carriers.js';
+import { CARRIERS, detectCarrier, extractNumbers, trackingUrl, looksLikeOrderNumber } from './carriers.js';
 import { PROVIDERS, fetchTracking, testKey, parseSetupHash } from './providers.js';
 import { statusLabel, arrivalCopy, statusTone, relativeTime, eventTime, milestoneStep, parseTime } from './format.js';
 
@@ -332,7 +332,9 @@ function findShipment(el) {
 async function addFromInput(text) {
   const numbers = extractNumbers(text);
   if (!numbers.length) {
-    showAddHint('No tracking number found in that. Paste the number itself or the carrier link.', 'is-error');
+    showAddHint(looksLikeOrderNumber(text)
+      ? `${text.trim()} looks like a store order number, which carriers can't track. Open the order in the store or the Shop app and paste the tracking number or the "Track package" link.`
+      : 'No tracking number found in that. Paste the number itself or the carrier link.', 'is-error');
     return;
   }
   const existing = new Set(state.shipments.map((s) => s.number));
